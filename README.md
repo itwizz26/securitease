@@ -1,18 +1,27 @@
 # Store Application
-The Store application keeps track of customers and orders in a database.
 
-# Assumptions
-This README assumes you're using a posix environment. It's possible to run this on Windows as well:
-* Instead of `./gradlew` use `gradlew.bat`
-* The syntax for creating the Docker container is different. You could also install PostgreSQL on bare metal if you prefer
+The Store application keeps track of customers, orders, and products in a PostgreSQL database.
 
+## Assumptions
 
-# Prerequisites
-This service assumes the presence of a postgresql 16.2 database server running on localhost:5433 (note the non-standard port)
-It assumes a username and password `admin:admin` can be used.
-It assumes there's already a database called `store`
+This README assumes you're using a POSIX environment. It's possible to run the application on Windows as well:
 
-You can start the PostgreSQL instance like this:
+- Instead of `./gradlew`, use `gradlew.bat`
+- The syntax for creating the Docker container is different on Windows
+- You can also install PostgreSQL on bare metal if preferred
+
+## Prerequisites
+
+The application uses PostgreSQL 16.2 running on `localhost:5433` (note the non-standard port).
+
+It assumes:
+
+- Username: `admin`
+- Password: `admin`
+- Database: `store`
+
+You can start the PostgreSQL instance using Docker:
+
 ```shell
 docker run -d \
   --name postgres \
@@ -26,47 +35,256 @@ docker run -d \
   postgres -c wal_level=logical
 ```
 
-# Running the application
-You should be able to run the service using
+Alternatively, the included `docker-compose.yml` can be used:
+
+```shell
+docker compose up -d
+```
+
+## Running the Application
+
+Start the application with:
+
 ```shell
 ./gradlew bootRun
 ```
 
-The application uses Liquibase to migrate the schema. Some sample data is provided. You can create more data by reading the documentation in utils/README.md
+On Windows:
 
-# Data model
-An order has an ID, a description, and is associated with the customer which made the order.
-A customer has an ID, a name, and 0 or more orders.
+```powershell
+.\gradlew.bat bootRun
+```
 
-# API
-Two endpoints are provided:
-   * /order
-   * /customer
+Liquibase automatically manages the database schema and migrations when the application starts.
 
-Each of them supports a POST and a GET. The data model is circular - a customer owns a number of orders, and that order necessarily refers back to the customer which owns it.
-To avoid loops in the serializer, when writing out a Customer or an Order, they're mapped to CustomerDTO and OrderDTO which contain truncated versions of the dependent object - CustomerOrderDTO and OrderCustomerDTO respectively.
+Sample customers, orders, and products are provided.
 
-The API is documented in the OpenAPI file OpenAPI.yaml. Note that this spec includes part of one of the tasks below (the new /products endpoint)
+Additional sample data can be created by following the documentation in `utils/README.md`.
 
-# Tasks
+## Running Tests
 
-1. Extend the order endpoint to find a specific order, by ID
-2. Extend the customer endpoint to find customers based on a query string to match a substring of one of the words in their name
-3. Users have complained that in production the GET endpoints can get very slow. The database is unfortunately not co-located with the application server, and there's high latency between the two. Identify if there are any optimisations that can improve performance
-4. Add a new endpoint /products to model products which appear in an order:
-      * A single order contains 1 or more products. 
-      * A product has an ID and a description. 
-      * Add a POST endpoint to create a product
-      * Add a GET endpoint to return all products, and a specific product by ID
-        * In both cases, also return a list of the order IDs which contain those products
-      * Change the orders endpoint to return a list of products contained in the order
+Run the complete test suite with:
 
-# Bonus points
-1. Implement a CI pipeline on the platform of your choice to build the project and deliver it as a Dockerized image
+```shell
+./gradlew clean test
+```
 
-# Notes on the tasks
-Assume that the project represents a production application.
-Think carefully about the impact on performance when implementing your changes
-The specifications of the tasks have been left deliberately vague. You will be required to exercise judgement about what to deliver - in a real world environment, you would clarify these points in refinement, but since this is a project to be completed without interaction, feel free to make assumptions - but be prepared to defend them when asked.
-There's no CI pipeline associated with this project, but in reality there would be. Consider the things that you would expect that pipeline to verify before allowing your code to be promoted
-Feel free to refactor the codebase if necessary. Bad choices were deliberately made when creating this project.
+On Windows:
+
+```powershell
+.\gradlew.bat clean test
+```
+
+The project also generates a JaCoCo test coverage report.
+
+## Data Model
+
+### Customer
+
+A customer has:
+
+- An ID
+- A name
+- Zero or more orders
+
+### Order
+
+An order has:
+
+- An ID
+- A description
+- A customer
+- One or more products
+
+### Product
+
+A product has:
+
+- An ID
+- A description
+- Zero or more associated orders
+
+Orders and products have a many-to-many relationship represented by the `order_product` join table.
+
+The API uses DTOs to avoid serializing circular entity relationships.
+
+## API
+
+The existing API endpoints are preserved as defined by the supplied API specification.
+
+### Customers
+
+#### Get all customers
+
+```http
+GET /customer
+```
+
+#### Search customers by name
+
+```http
+GET /customer?name=<substring>
+```
+
+The search is case-insensitive and matches the supplied value as a substring of the customer's name.
+
+#### Create a customer
+
+```http
+POST /customer
+```
+
+### Orders
+
+#### Get all orders
+
+```http
+GET /order
+```
+
+Orders include their associated customer and products.
+
+#### Get an order by ID
+
+```http
+GET /order/{id}
+```
+
+Returns `404 Not Found` when the order does not exist.
+
+#### Create an order
+
+```http
+POST /order
+```
+
+An order is created with a customer and one or more product IDs.
+
+### Products
+
+#### Get all products
+
+```http
+GET /products
+```
+
+Each product includes the IDs of orders containing that product.
+
+#### Get a product by ID
+
+```http
+GET /products/{id}
+```
+
+Each product includes the IDs of orders containing that product.
+
+#### Create a product
+
+```http
+POST /products
+```
+
+## Performance
+
+The production scenario described in the assessment involves high latency between the application server and database server.
+
+The initial entity relationships use lazy loading. When returning DTOs containing related entities, this can result in N+1 database queries.
+
+To reduce unnecessary database round trips, the order, customer, and product read operations use JPA `EntityGraph` fetching where appropriate.
+
+This allows the relationships required by the API response to be loaded as part of the database query rather than triggering additional queries for each individual entity.
+
+This is particularly important when database latency is high, because reducing the number of database round trips can have a significant impact on response time.
+
+## Database Migrations
+
+Liquibase is used to manage database schema changes.
+
+Product functionality is introduced through a Liquibase migration which creates:
+
+- The `product` table
+- The `order_product` join table
+- An index on `order_product.product_id`
+
+Sample product data and order-product relationships are also provided through a subsequent migration.
+
+## Docker
+
+The application can be packaged as a Docker image.
+
+Build the application:
+
+```shell
+./gradlew bootJar
+```
+
+Build the Docker image:
+
+```shell
+docker build -t store:local .
+```
+
+The Docker image uses Java 17 and runs the Spring Boot application on port `8080`.
+
+## CI/CD
+
+The project includes a GitHub Actions CI pipeline.
+
+The pipeline:
+
+1. Checks out the source code
+2. Sets up Java 17
+3. Starts PostgreSQL 16.2 as a service
+4. Runs the Gradle test suite
+5. Builds the Spring Boot application
+6. Builds the Docker image
+7. Publishes the Docker image to GitHub Container Registry when changes are pushed to `main`
+
+This provides automated verification before the application is delivered as a Dockerized image.
+
+## Project Structure
+
+```text
+src/
+├── main/
+│   ├── java/
+│   │   └── com/example/store/
+│   │       ├── controller/
+│   │       ├── dto/
+│   │       ├── entity/
+│   │       ├── mapper/
+│   │       └── repository/
+│   └── resources/
+│       └── db/
+│           └── changelog/
+├── test/
+│   └── java/
+│       └── com/example/store/
+├── utils/
+├── Dockerfile
+├── docker-compose.yml
+├── build.gradle
+└── OpenAPI.yaml
+```
+
+## Assessment Tasks
+
+The following functionality has been implemented:
+
+- **Task 1:** Find an order by ID
+- **Task 2:** Search customers by a case-insensitive name substring
+- **Task 3:** Optimize database access for read endpoints to reduce round trips
+- **Task 4:** Add products, product creation/retrieval, order-product relationships, and product information to order responses
+- **Bonus:** Add a GitHub Actions CI/CD pipeline and Docker image delivery
+
+The implementation preserves the existing `/order` and `/customer` API paths defined by the assessment rather than changing the API contract.
+
+## API Documentation
+
+The complete API specification is available in `OpenAPI.yaml`.
+
+## Notes
+
+The project represents a production application, so particular attention has been paid to database access and minimizing unnecessary network round trips.
+
+The assessment intentionally leaves some implementation decisions open. The implementation choices above are intended to balance correctness, maintainability, and performance while keeping the existing API contract intact.
