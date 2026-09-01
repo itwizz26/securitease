@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 3-product-schema
+      author: developer@securitease.com
+      changes:
+        - sqlFile:
+            path: db/changelog/product-schema.sql
+
+  - changeSet:
+      id: 4-product-data
+      author: developer@securitease.com
+      changes:
+        - sqlFile:
+            path: db/changelog/product-data.sql
