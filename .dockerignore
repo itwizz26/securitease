@@ -1,0 +1,11 @@
+.gradle
+.git
+.github
+.idea
+.vscode
+src
+utils
+*.iml
+README.md
+OpenAPI.yaml
+docker-compose.yml

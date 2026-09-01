@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16.2 # Uses the specific version requested
+    container_name: postgres # Match the requested container name
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: store
+    ports:
+      - "5433:5432" # Maps external port 5433 to internal port 5432
+    command: postgres -c wal_level=logical # Adds the required system configuration
+    volumes:
+      - postgres_assessment_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_assessment_data:
